@@ -62,8 +62,8 @@ def create_id_and_nonce_headers() -> Dict[str, str]:
 
 def throw_if_err(result: IResult[Any]) -> Any:
     """Throw an error if the result is an error, otherwise return the value."""
-    if result.is_err():
-        raise Exception(result.error())
+    if result.is_err:
+        raise Exception(result.error)
     return result.get_ok()
 
 def transform_create_tx_response_from_network(response: Dict[str, Any]) -> IResult[Dict[str, Any]]:

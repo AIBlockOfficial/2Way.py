@@ -10,6 +10,7 @@ import uuid
 import random
 from urllib.parse import urlparse
 from aiblock.interfaces import IResult, IErrorInternal
+import json
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -39,14 +40,19 @@ def get_random_string(length: int) -> str:
     chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return ''.join(random.choice(chars) for _ in range(length))
 
-def get_headers() -> Dict[str, str]:
+def get_headers(cache_id: Optional[str] = None) -> Dict[str, str]:
     """Get headers for API requests."""
-    return {
+    headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Request-ID': str(uuid.uuid4()),
         'Nonce': get_random_string(32)
     }
+    
+    if cache_id:
+        headers['x-cache-id'] = cache_id
+    
+    return headers
 
 def create_response(
     status: ResponseStatus,
@@ -152,63 +158,110 @@ class BlockchainClient:
         if self.storage_host is None:
             raise ValueError("storage_host cannot be None")
 
-    def _make_request(
-        self,
-        endpoint: str,
-        host_type: Literal['storage', 'mempool'] = 'storage'
-    ) -> IResult[APIResponse]:
-        """Make an API request with error handling."""
-        host = self.mempool_host if host_type == 'mempool' else self.storage_host
-        if not host:
-            return IResult.err(IErrorInternal.InvalidParametersProvided, f'{host_type.title()} host not initialized')
-
+    def _make_request(self, endpoint: str, method: str = 'GET', data: Any = None) -> IResult[APIResponse]:
+        """
+        Make an HTTP request to the appropriate host.
+        
+        Args:
+            endpoint: The API endpoint to call
+            method: HTTP method ('GET' or 'POST')
+            data: Data to send with POST requests
+            
+        Returns:
+            IResult containing the API response or error
+        """
         try:
-            response = requests.get(f"{host}/{endpoint}", headers=get_headers())
-            return handle_response(response)
-        except requests.RequestException as e:
-            return IResult.err(IErrorInternal.NetworkError, f'Network error: {str(e)}')
+            # Determine which host to use based on endpoint
+            if endpoint.startswith(('total_supply', 'issued_supply', 'fetch_balance', 'create_item_asset', 'create_transactions')):
+                if not self.mempool_host:
+                    raise ValueError("Mempool host is required for this endpoint")
+                url = f"{self.mempool_host}/{endpoint}"
+            else:
+                if not self.storage_host:
+                    raise ValueError("Storage host is required for this endpoint")
+                url = f"{self.storage_host}/{endpoint}"
+            
+            # Prepare headers
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': f'AIBlock-Python-SDK/{self._get_version()}',
+                'Request-ID': str(uuid.uuid4()),
+                'Nonce': self._get_random_string(32)
+            }
+            
+            # Make the request
+            if method.upper() == 'POST':
+                if data is not None:
+                    # Use the same format as the working example: requests.request with data parameter
+                    payload = json.dumps(data)
+                    response = requests.request('POST', url, headers=headers, data=payload, timeout=30)
+                else:
+                    response = requests.post(url, headers=headers, timeout=30)
+            else:
+                response = requests.get(url, headers=headers, timeout=30)
+            
+            # Handle response
+            if response.status_code == 200:
+                try:
+                    json_response = response.json()
+                    return IResult.ok(APIResponse(**json_response))
+                except (ValueError, json.JSONDecodeError):
+                    return IResult.err(IErrorInternal.InvalidNetworkResponse, f"Invalid JSON response: {response.text}")
+            else:
+                try:
+                    error_response = response.json()
+                    reason = error_response.get('reason', f'HTTP {response.status_code}')
+                    return IResult.err(IErrorInternal.InvalidNetworkResponse, reason)
+                except (ValueError, json.JSONDecodeError):
+                    return IResult.err(IErrorInternal.InvalidNetworkResponse, f"HTTP {response.status_code}: {response.text}")
+                    
+        except requests.exceptions.Timeout:
+            return IResult.err(IErrorInternal.NetworkError, "Request timeout")
+        except requests.exceptions.ConnectionError:
+            return IResult.err(IErrorInternal.NetworkError, "Connection error")
+        except requests.exceptions.RequestException as e:
+            return IResult.err(IErrorInternal.NetworkError, f"Request failed: {str(e)}")
+        except Exception as e:
+            return IResult.err(IErrorInternal.UnknownError, f"Unexpected error: {str(e)}")
 
     def get_latest_block(self) -> IResult[APIResponse]:
         """Get the latest block from the blockchain."""
         return self._make_request('latest_block')
 
     def get_block_by_num(self, block_num: int) -> IResult[APIResponse]:
-        """Get a block by its number.
-
-        Args:
-            block_num: Block number to retrieve
-
-        Returns:
-            IResult[APIResponse] containing:
-                - id: Unique identifier for this response
-                - status: 'success', 'error', 'pending', or 'unknown'
-                - reason: Human readable explanation
-                - content: Block data if successful
-
-        Raises:
-            ValueError: If storage_host is None
         """
-        self._validate_storage_host()
-        return self._make_request(f'block/{block_num}')
+        Get a specific block by its number.
+        Uses the block_by_num endpoint with POST request containing array of block numbers.
+        This matches the JavaScript SDK implementation pattern.
+        
+        Args:
+            block_num: The block number to retrieve
+            
+        Returns:
+            IResult containing the block data or error
+        """
+        # Validate input
+        if not isinstance(block_num, int) or block_num < 0:
+            return IResult.err(IErrorInternal.InvalidParametersProvided, "Block number must be a non-negative integer")
+        
+        # Use block_by_num endpoint with POST request containing array of block numbers
+        # This matches the JavaScript SDK implementation and the curl example
+        return self._make_request('block_by_num', method='POST', data=[block_num])
 
     def get_blockchain_entry(self, block_hash: str) -> IResult[APIResponse]:
-        """Get a blockchain entry by hash.
-
-        Args:
-            block_hash: Hash of the block to retrieve
-
-        Returns:
-            IResult[APIResponse] containing:
-                - id: Unique identifier for this response
-                - status: 'success', 'error', 'pending', or 'unknown'
-                - reason: Human readable explanation
-                - content: Block data if successful
-
-        Raises:
-            ValueError: If storage_host is None
         """
-        self._validate_storage_host()
-        return self._make_request(f'blockchain/{block_hash}')
+        Get blockchain entry by hash using blockchain_entry endpoint.
+        
+        Args:
+            block_hash: The block hash to look up
+            
+        Returns:
+            IResult containing the blockchain entry data or error
+        """
+        # Use blockchain_entry endpoint with POST request containing array of hashes
+        # This matches the JavaScript SDK implementation pattern
+        return self._make_request('blockchain_entry', method='POST', data=[block_hash])
 
     def get_total_supply(self) -> IResult[APIResponse]:
         """Get the total supply of tokens.
@@ -216,9 +269,7 @@ class BlockchainClient:
         Returns:
             IResult[APIResponse]: A result containing the total supply information.
         """
-        if not self.mempool_host:
-            return IResult.err(IErrorInternal.InvalidParametersProvided, "Mempool URL not set")
-        return self._make_request('total_supply', host_type='mempool')
+        return self._make_request('total_supply')
 
     def get_issued_supply(self) -> IResult[APIResponse]:
         """Get the issued supply of tokens.
@@ -226,6 +277,62 @@ class BlockchainClient:
         Returns:
             IResult[APIResponse]: A result containing the issued supply information.
         """
-        if not self.mempool_host:
-            return IResult.err(IErrorInternal.InvalidParametersProvided, "Mempool URL not set")
-        return self._make_request('issued_supply', host_type='mempool')
+        return self._make_request('issued_supply')
+
+    def get_transaction_by_hash(self, tx_hash: str) -> IResult[APIResponse]:
+        """
+        Get transaction by hash using blockchain_entry endpoint.
+        This matches the JavaScript SDK's approach where transactions are fetched
+        using the blockchain_entry endpoint with an array of hashes.
+        
+        Args:
+            tx_hash: The transaction hash to look up
+            
+        Returns:
+            IResult containing the transaction data or error
+        """
+        # Validate input
+        if not tx_hash or not isinstance(tx_hash, str):
+            return IResult.err(IErrorInternal.InvalidParametersProvided, "Transaction hash must be a non-empty string")
+        
+        # Use blockchain_entry endpoint with POST request containing array of hashes
+        # This matches the JavaScript SDK implementation
+        return self._make_request('blockchain_entry', method='POST', data=[tx_hash])
+    
+    def fetch_transactions(self, transaction_hashes: list[str]) -> IResult[APIResponse]:
+        """
+        Fetch multiple transactions by their hashes using blockchain_entry endpoint.
+        This method matches the JavaScript SDK's fetchTransactions implementation.
+        
+        Args:
+            transaction_hashes: List of transaction hashes to fetch
+            
+        Returns:
+            IResult containing the transactions data or error
+        """
+        # Validate input
+        if not transaction_hashes:
+            return IResult.err(IErrorInternal.InvalidParametersProvided, "Transaction hashes list cannot be empty")
+        
+        if not isinstance(transaction_hashes, list):
+            return IResult.err(IErrorInternal.InvalidParametersProvided, "Transaction hashes must be a list")
+        
+        # Validate each hash
+        for tx_hash in transaction_hashes:
+            if not tx_hash or not isinstance(tx_hash, str):
+                return IResult.err(IErrorInternal.InvalidParametersProvided, "All transaction hashes must be non-empty strings")
+        
+        # Use blockchain_entry endpoint with POST request containing array of hashes
+        # This exactly matches the JavaScript SDK implementation
+        return self._make_request('blockchain_entry', method='POST', data=transaction_hashes)
+
+    def _get_version(self) -> str:
+        """Get the SDK version."""
+        return "0.2.7"  # Current version from pyproject.toml
+    
+    def _get_random_string(self, length: int) -> str:
+        """Generate a random string of specified length."""
+        import random
+        import string
+        chars = string.ascii_letters + string.digits
+        return ''.join(random.choice(chars) for _ in range(length))

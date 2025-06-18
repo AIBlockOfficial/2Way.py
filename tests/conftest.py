@@ -182,9 +182,9 @@ def mock_api(requests_mock: requests_mock.Mocker):
         }
     )
 
-    # Mock block by number endpoint
-    requests_mock.get(
-        'https://storage.aiblock.dev/block/1000',
+    # Mock block by number endpoint - now uses POST with array format
+    requests_mock.post(
+        'https://storage.aiblock.dev/block_by_num',
         json={
             'id': '8901-2345-6789-0123',
             'status': 'success',
@@ -198,9 +198,9 @@ def mock_api(requests_mock: requests_mock.Mocker):
         }
     )
 
-    # Mock blockchain entry endpoint
-    requests_mock.get(
-        'https://storage.aiblock.dev/blockchain/test_hash',
+    # Mock blockchain entry endpoint - now uses POST with array format
+    requests_mock.post(
+        'https://storage.aiblock.dev/blockchain_entry',
         json={
             'id': '9012-3456-7890-1234',
             'status': 'success',
@@ -214,21 +214,22 @@ def mock_api(requests_mock: requests_mock.Mocker):
         }
     )
 
-    # Mock error responses
+    # Mock error responses for new POST endpoints
     requests_mock.get(
         'https://storage.aiblock.dev/latest_block_error',
         status_code=500,
         text='Server error occurred'
     )
 
-    requests_mock.get(
-        'https://storage.aiblock.dev/block/invalid',
+    # Error mocks for POST endpoints
+    requests_mock.post(
+        'https://storage.aiblock.dev/block_by_num_error',
         status_code=404,
         text='Block not found'
     )
 
-    requests_mock.get(
-        'https://storage.aiblock.dev/blockchain/invalid_hash',
+    requests_mock.post(
+        'https://storage.aiblock.dev/blockchain_entry_error',
         status_code=405,
         text='Method not allowed'
     )
