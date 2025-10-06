@@ -1,301 +1,456 @@
 # AIBlock SDK Examples
 
-This document provides practical examples of using the AIBlock SDK in AI-focused applications.
+This document provides practical examples of using the AIBlock SDK for various blockchain operations.
 
-## AI Model Management
+## Setup
 
-### Storing Model Checkpoints as NFTs
+First, install the SDK and set up your environment:
+
+```bash
+pip install aiblock
+```
+
+Create a `.env` file:
+```bash
+AIBLOCK_STORAGE_HOST=https://storage.aiblock.dev
+AIBLOCK_MEMPOOL_HOST=https://mempool.aiblock.dev
+AIBLOCK_VALENCE_HOST=https://valence.aiblock.dev
+AIBLOCK_PASSPHRASE=your-secure-passphrase
+```
+
+## Basic Blockchain Queries
+
+### Getting Latest Block Information
+
+```python
+from aiblock.blockchain import BlockchainClient
+
+# Initialize client
+client = BlockchainClient(
+    storage_host='https://storage.aiblock.dev',
+    mempool_host='https://mempool.aiblock.dev'
+)
+
+# Get latest block
+result = client.get_latest_block()
+if result.is_ok:
+    block_data = result.get_ok()
+    print(f"Latest block number: {block_data['content']['block_num']}")
+    print(f"Block hash: {block_data['content']['block_hash']}")
+    print(f"Timestamp: {block_data['content']['timestamp']}")
+else:
+    print(f"Error: {result.error_message}")
+```
+
+### Querying Historical Blocks
+
+```python
+def get_block_info(client, block_number):
+    """Get information about a specific block"""
+    result = client.get_block_by_num(block_number)
+    
+    if result.is_ok:
+        block_data = result.get_ok()
+        content = block_data['content']
+        
+        print(f"Block {block_number}:")
+        print(f"  Hash: {content['block_hash']}")
+        print(f"  Timestamp: {content['timestamp']}")
+        print(f"  Transactions: {len(content.get('transactions', []))}")
+        
+        return content
+    else:
+        print(f"Error getting block {block_number}: {result.error_message}")
+        return None
+
+# Example usage
+block_info = get_block_info(client, 1)
+```
+
+### Supply Information
+
+```python
+def get_supply_info(client):
+    """Get total and issued supply information"""
+    
+    # Get total supply
+    total_result = client.get_total_supply()
+    if total_result.is_ok:
+        total_data = total_result.get_ok()
+        print(f"Total supply: {total_data['content']['total_supply']}")
+    else:
+        print(f"Error getting total supply: {total_result.error_message}")
+    
+    # Get issued supply
+    issued_result = client.get_issued_supply()
+    if issued_result.is_ok:
+        issued_data = issued_result.get_ok()
+        print(f"Issued supply: {issued_data['content']['issued_supply']}")
+    else:
+        print(f"Error getting issued supply: {issued_result.error_message}")
+
+# Example usage
+get_supply_info(client)
+```
+
+## Transaction Queries
+
+### Getting Transaction by Hash
+
+```python
+def get_transaction_details(client, tx_hash):
+    """Get detailed information about a transaction"""
+    if not tx_hash or not tx_hash.strip():
+        print("Error: Transaction hash cannot be empty")
+        return None
+    
+    result = client.get_transaction_by_hash(tx_hash)
+    
+    if result.is_ok:
+        tx_data = result.get_ok()
+        print(f"Transaction {tx_hash}:")
+        print(f"  Status: {tx_data['status']}")
+        print(f"  Content: {tx_data['content']}")
+        return tx_data
+    else:
+        print(f"Error getting transaction: {result.error_message}")
+        return None
+
+# Example usage
+tx_hash = "your_transaction_hash_here"
+transaction = get_transaction_details(client, tx_hash)
+```
+
+### Batch Transaction Queries
+
+```python
+def fetch_multiple_transactions(client, tx_hashes):
+    """Fetch multiple transactions in a single request"""
+    if not tx_hashes:
+        print("Error: Transaction hash list cannot be empty")
+        return None
+    
+    # Validate all hashes are non-empty
+    valid_hashes = [h for h in tx_hashes if h and h.strip()]
+    if len(valid_hashes) != len(tx_hashes):
+        print("Error: All transaction hashes must be non-empty strings")
+        return None
+    
+    result = client.fetch_transactions(valid_hashes)
+    
+    if result.is_ok:
+        transactions_data = result.get_ok()
+        print(f"Retrieved {len(valid_hashes)} transactions")
+        return transactions_data
+    else:
+        print(f"Error fetching transactions: {result.error_message}")
+        return None
+
+# Example usage
+tx_hashes = ["hash1", "hash2", "hash3"]
+transactions = fetch_multiple_transactions(client, tx_hashes)
+```
+
+## Wallet Operations
+
+### Creating and Initializing a Wallet
 
 ```python
 from aiblock.wallet import Wallet
-from aiblock.blockchain import BlockchainClient
-import json
-import hashlib
 
-def save_model_checkpoint(model_path: str, metadata: dict, client: BlockchainClient, wallet: Wallet):
-    # Calculate model hash
-    with open(model_path, 'rb') as f:
-        model_hash = hashlib.sha256(f.read()).hexdigest()
+def create_new_wallet():
+    """Create a new wallet with a generated seed phrase"""
+    wallet = Wallet()
     
-    # Prepare metadata
-    checkpoint_metadata = {
-        "type": "model_checkpoint",
-        "name": metadata.get("name", "Unnamed Model"),
-        "version": metadata.get("version", "1.0"),
-        "description": metadata.get("description", ""),
-        "model_hash": model_hash,
-        "architecture": metadata.get("architecture", {}),
-        "training_params": metadata.get("training_params", {}),
-        "performance_metrics": metadata.get("performance_metrics", {}),
-        "timestamp": metadata.get("timestamp", "")
+    # Generate a new seed phrase
+    seed_phrase = wallet.generate_seed_phrase()
+    print(f"Generated seed phrase: {seed_phrase}")
+    print("⚠️  Store this seed phrase securely!")
+    
+    # Configuration
+    config = {
+        'passphrase': 'your-secure-passphrase',
+        'mempoolHost': 'https://mempool.aiblock.dev',
+        'storageHost': 'https://storage.aiblock.dev',
+        'valenceHost': 'https://valence.aiblock.dev'
     }
     
-    # Create NFT for the checkpoint
-    response = client.create_item_asset(
-        to_address=wallet.address,
-        amount=1,
-        metadata=checkpoint_metadata
+    # Initialize wallet from seed
+    result = wallet.from_seed(seed_phrase, config)
+    
+    if result.is_ok:
+        print("✅ Wallet initialized successfully")
+        print(f"Address: {wallet.get_address()}")
+        return wallet, seed_phrase
+    else:
+        print(f"❌ Error initializing wallet: {result.error_message}")
+        return None, None
+
+# Example usage
+wallet, seed = create_new_wallet()
+```
+
+### Restoring a Wallet from Seed
+
+```python
+def restore_wallet_from_seed(seed_phrase):
+    """Restore a wallet from an existing seed phrase"""
+    wallet = Wallet()
+    
+    config = {
+        'passphrase': 'your-secure-passphrase',
+        'mempoolHost': 'https://mempool.aiblock.dev',
+        'storageHost': 'https://storage.aiblock.dev',
+        'valenceHost': 'https://valence.aiblock.dev'
+    }
+    
+    result = wallet.from_seed(seed_phrase, config)
+    
+    if result.is_ok:
+        print("✅ Wallet restored successfully")
+        print(f"Address: {wallet.get_address()}")
+        return wallet
+    else:
+        print(f"❌ Error restoring wallet: {result.error_message}")
+        return None
+
+# Example usage
+existing_seed = "your twelve word seed phrase goes here like this example"
+restored_wallet = restore_wallet_from_seed(existing_seed)
+```
+
+### Offline Wallet Operations
+
+```python
+def create_offline_wallet(seed_phrase):
+    """Create a wallet for offline operations (key generation, signing)"""
+    wallet = Wallet()
+    
+    config = {
+        'passphrase': 'your-secure-passphrase',
+        # Hosts not required for offline operations
+        'mempoolHost': '',
+        'storageHost': '',
+        'valenceHost': ''
+    }
+    
+    # Initialize in offline mode
+    result = wallet.from_seed(seed_phrase, config, init_offline=True)
+    
+    if result.is_ok:
+        print("✅ Offline wallet initialized successfully")
+        print(f"Address: {wallet.get_address()}")
+        return wallet
+    else:
+        print(f"❌ Error initializing offline wallet: {result.error_message}")
+        return None
+
+# Example usage
+offline_wallet = create_offline_wallet("your seed phrase here")
+```
+
+## Error Handling Patterns
+
+### Robust Error Handling
+
+```python
+def robust_blockchain_query(client):
+    """Example of comprehensive error handling"""
+    
+    try:
+        # Attempt to get latest block
+        result = client.get_latest_block()
+        
+        if result.is_ok:
+            block_data = result.get_ok()
+            print(f"✅ Success: Got block {block_data['content']['block_num']}")
+            return block_data
+        else:
+            # Handle different types of errors
+            error_type = result.error
+            error_msg = result.error_message
+            
+            print(f"❌ Error Type: {error_type}")
+            print(f"❌ Error Message: {error_msg}")
+            
+            # Handle specific error types
+            if "Connection" in error_msg:
+                print("🔄 Retrying with different host...")
+                # Could implement retry logic here
+            elif "timeout" in error_msg.lower():
+                print("⏱️  Request timed out, try again later")
+            
+            return None
+            
+    except Exception as e:
+        print(f"💥 Unexpected error: {str(e)}")
+        return None
+
+# Example usage
+block_data = robust_blockchain_query(client)
+```
+
+### Input Validation
+
+```python
+def validate_and_query_block(client, block_num):
+    """Example of input validation before API calls"""
+    
+    # Validate input
+    if not isinstance(block_num, int):
+        print("❌ Block number must be an integer")
+        return None
+    
+    if block_num < 0:
+        print("❌ Block number must be non-negative")
+        return None
+    
+    # Make the API call
+    result = client.get_block_by_num(block_num)
+    
+    if result.is_ok:
+        return result.get_ok()
+    else:
+        print(f"❌ Error: {result.error_message}")
+        return None
+
+# Example usage
+block_data = validate_and_query_block(client, 1)
+```
+
+## Configuration Management
+
+### Using Environment Variables
+
+```python
+import os
+from aiblock.config import get_config
+
+def setup_from_environment():
+    """Setup client using environment variables"""
+    
+    # Load configuration from environment
+    config = get_config()
+    
+    # Initialize client
+    client = BlockchainClient(
+        storage_host=config.get('storageHost'),
+        mempool_host=config.get('mempoolHost')
     )
     
-    return response
+    print("✅ Client configured from environment variables")
+    return client
 
-# Usage example
+# Example usage
+client = setup_from_environment()
+```
+
+### Configuration Validation
+
+```python
+def validate_configuration(config):
+    """Validate configuration before using"""
+    required_keys = ['storageHost', 'passphrase']
+    optional_keys = ['mempoolHost', 'valenceHost']
+    
+    # Check required keys
+    for key in required_keys:
+        if key not in config or not config[key]:
+            print(f"❌ Missing required configuration: {key}")
+            return False
+    
+    # Validate URLs
+    for key in ['storageHost', 'mempoolHost', 'valenceHost']:
+        if key in config and config[key]:
+            if not config[key].startswith(('http://', 'https://')):
+                print(f"❌ Invalid URL format for {key}: {config[key]}")
+                return False
+    
+    print("✅ Configuration is valid")
+    return True
+
+# Example usage
 config = {
+    'passphrase': 'secure-passphrase',
     'storageHost': 'https://storage.aiblock.dev',
-    'mempoolHost': 'https://mempool.aiblock.dev',
-    'valenceHost': 'https://valence.aiblock.dev'
-}
-client = BlockchainClient(storage_host=config['storageHost'], mempool_host=config['mempoolHost'])
-wallet = Wallet()
-
-metadata = {
-    "name": "BERT-Large Fine-tuned",
-    "version": "2.0",
-    "description": "BERT model fine-tuned on custom dataset",
-    "architecture": {
-        "type": "transformer",
-        "hidden_size": 1024,
-        "num_layers": 24,
-        "num_heads": 16
-    },
-    "training_params": {
-        "epochs": 10,
-        "batch_size": 32,
-        "learning_rate": 2e-5,
-        "optimizer": "AdamW"
-    },
-    "performance_metrics": {
-        "accuracy": 0.92,
-        "f1_score": 0.89,
-        "precision": 0.90,
-        "recall": 0.88
-    },
-    "timestamp": "2024-03-25T15:30:00Z"
+    'mempoolHost': 'https://mempool.aiblock.dev'
 }
 
-response = save_model_checkpoint(
-    "path/to/model.pt",
-    metadata,
-    client,
-    wallet
-)
-```
-
-### Dataset Management
-
-```python
-def register_dataset(dataset_path: str, metadata: dict, client: BlockchainClient, wallet: Wallet):
-    # Calculate dataset hash
-    with open(dataset_path, 'rb') as f:
-        dataset_hash = hashlib.sha256(f.read()).hexdigest()
-    
-    # Prepare metadata
-    dataset_metadata = {
-        "type": "dataset",
-        "name": metadata.get("name", "Unnamed Dataset"),
-        "version": metadata.get("version", "1.0"),
-        "description": metadata.get("description", ""),
-        "dataset_hash": dataset_hash,
-        "schema": metadata.get("schema", {}),
-        "statistics": metadata.get("statistics", {}),
-        "license": metadata.get("license", ""),
-        "timestamp": metadata.get("timestamp", "")
-    }
-    
-    # Create NFT for the dataset
-    response = client.create_item_asset(
-        to_address=wallet.address,
-        amount=1,
-        metadata=dataset_metadata
-    )
-    
-    return response
-
-# Usage example
-dataset_metadata = {
-    "name": "Large Language Model Training Dataset",
-    "version": "1.0",
-    "description": "Curated dataset for language model training",
-    "schema": {
-        "fields": ["text", "label", "source"],
-        "types": ["string", "int", "string"]
-    },
-    "statistics": {
-        "num_samples": 1000000,
-        "num_classes": 10,
-        "class_distribution": {
-            "0": 0.1,
-            "1": 0.1,
-            # ... other classes
-        }
-    },
-    "license": "CC BY-SA 4.0",
-    "timestamp": "2024-03-25T15:30:00Z"
-}
-
-response = register_dataset(
-    "path/to/dataset.csv",
-    dataset_metadata,
-    client,
-    wallet
-)
-```
-
-### Model Marketplace Integration
-
-```python
-def list_model_for_sale(
-    model_metadata: dict,
-    price: int,
-    client: BlockchainClient,
-    wallet: Wallet
-):
-    # Prepare marketplace metadata
-    marketplace_metadata = {
-        "type": "ai_model_listing",
-        "model_info": model_metadata,
-        "price": price,
-        "seller": wallet.address,
-        "status": "active",
-        "timestamp": "2024-03-25T15:30:00Z"
-    }
-    
-    # Create marketplace listing as NFT
-    response = client.create_item_asset(
-        to_address=wallet.address,
-        amount=1,
-        metadata=marketplace_metadata
-    )
-    
-    return response
-
-# Usage example
-model_metadata = {
-    "name": "GPT-4 Fine-tuned for Medical Text",
-    "version": "1.0",
-    "description": "Specialized language model for medical text analysis",
-    "capabilities": [
-        "Medical text understanding",
-        "Disease classification",
-        "Treatment recommendation"
-    ],
-    "performance_metrics": {
-        "accuracy": 0.95,
-        "precision": 0.94,
-        "recall": 0.93,
-        "f1_score": 0.94
-    },
-    "training_details": {
-        "base_model": "GPT-4",
-        "fine_tuning_steps": 10000,
-        "dataset_size": "1M medical records"
-    },
-    "requirements": {
-        "compute": "16GB GPU",
-        "memory": "32GB RAM",
-        "disk": "100GB SSD"
-    }
-}
-
-# List model for 1000 tokens
-response = list_model_for_sale(
-    model_metadata,
-    1000,
-    client,
-    wallet
-)
-```
-
-### Model Verification and Provenance
-
-```python
-def verify_model_authenticity(
-    model_path: str,
-    blockchain_hash: str,
-    client: BlockchainClient
-) -> bool:
-    # Calculate current model hash
-    with open(model_path, 'rb') as f:
-        current_hash = hashlib.sha256(f.read()).hexdigest()
-    
-    # Compare with blockchain record
-    return current_hash == blockchain_hash
-
-def track_model_lineage(
-    base_model_hash: str,
-    training_data_hash: str,
-    new_model_metadata: dict,
-    client: BlockchainClient,
-    wallet: Wallet
-):
-    # Prepare lineage metadata
-    lineage_metadata = {
-        "type": "model_lineage",
-        "base_model": base_model_hash,
-        "training_data": training_data_hash,
-        "derived_model": new_model_metadata,
-        "timestamp": "2024-03-25T15:30:00Z"
-    }
-    
-    # Create lineage record as NFT
-    response = client.create_item_asset(
-        to_address=wallet.address,
-        amount=1,
-        metadata=lineage_metadata
-    )
-    
-    return response
-
-# Usage example
-new_model_metadata = {
-    "name": "GPT-4 Medical Specialist",
-    "version": "2.0",
-    "description": "Enhanced medical text model",
-    "changes": [
-        "Fine-tuned on additional medical datasets",
-        "Improved rare disease recognition",
-        "Enhanced medical terminology understanding"
-    ]
-}
-
-response = track_model_lineage(
-    "base_model_hash_from_blockchain",
-    "training_data_hash_from_blockchain",
-    new_model_metadata,
-    client,
-    wallet
-)
-```
-
-## Best Practices for AI Applications
-
-1. **Versioning**: Always include detailed version information in metadata
-2. **Reproducibility**: Store all hyperparameters and training configurations
-3. **Provenance**: Maintain clear lineage of model derivatives
-4. **Performance Metrics**: Include comprehensive evaluation metrics
-5. **Resource Requirements**: Specify computational requirements clearly
-6. **Documentation**: Maintain detailed documentation of model capabilities and limitations
-
-## Error Handling in AI Workflows
-
-```python
-def safe_ai_operation(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            # Log error
-            print(f"Error in AI operation: {str(e)}")
-            # Return standardized error response
-            return {
-                "status": "error",
-                "reason": str(e),
-                "error_code": "AI_OPERATION_FAILED"
-            }
-    return wrapper
-
-@safe_ai_operation
-def process_ai_model(model_path: str, client: BlockchainClient):
-    # AI model processing logic here
+if validate_configuration(config):
+    # Proceed with initialization
     pass
-``` 
+```
+
+## Best Practices
+
+### 1. Always Check Results
+
+```python
+# ✅ Good
+result = client.get_latest_block()
+if result.is_ok:
+    data = result.get_ok()
+    # Process data
+else:
+    print(f"Error: {result.error_message}")
+
+# ❌ Bad - don't assume success
+data = client.get_latest_block().get_ok()  # Could raise exception
+```
+
+### 2. Validate Inputs
+
+```python
+# ✅ Good
+def safe_get_transaction(client, tx_hash):
+    if not tx_hash or not isinstance(tx_hash, str) or not tx_hash.strip():
+        return None
+    return client.get_transaction_by_hash(tx_hash.strip())
+
+# ❌ Bad - no validation
+def unsafe_get_transaction(client, tx_hash):
+    return client.get_transaction_by_hash(tx_hash)
+```
+
+### 3. Handle Network Issues
+
+```python
+import time
+
+def retry_request(client, operation, max_retries=3, delay=1):
+    """Retry failed requests with exponential backoff"""
+    for attempt in range(max_retries):
+        result = operation()
+        
+        if result.is_ok:
+            return result
+        
+        if "Connection" in result.error_message and attempt < max_retries - 1:
+            wait_time = delay * (2 ** attempt)
+            print(f"Retry {attempt + 1}/{max_retries} in {wait_time}s...")
+            time.sleep(wait_time)
+        else:
+            break
+    
+    return result
+
+# Example usage
+result = retry_request(client, lambda: client.get_latest_block())
+```
+
+### 4. Secure Seed Phrase Handling
+
+```python
+import getpass
+
+def secure_seed_input():
+    """Securely input seed phrase without echoing to terminal"""
+    print("Enter your seed phrase (input will be hidden):")
+    seed_phrase = getpass.getpass("Seed phrase: ")
+    return seed_phrase.strip()
+
+# Example usage
+seed = secure_seed_input()
+```
+
+This documentation provides practical, working examples that align with the current AIBlock SDK implementation. 
