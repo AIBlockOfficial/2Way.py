@@ -3,6 +3,7 @@ name: Publish to PyPI
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 concurrency:
   group: publish-pypi-${{ github.ref }}
@@ -14,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,10 +32,28 @@ jobs:
       - name: Build sdist and wheel
         run: python -m build
 
+      - name: Validate PyPI token is available
+        run: |
+          if [ -z "${{ secrets.PYPI_API_TOKEN }}" ] && [ -z "${{ secrets.TWINE_PASSWORD }}" ]; then
+            echo "::error::Missing PyPI API token. Set repository secret PYPI_API_TOKEN (preferred) or TWINE_PASSWORD."
+            exit 1
+          fi
+
+      - name: Resolve token
+        id: resolve-token
+        run: |
+          if [ -n "${{ secrets.PYPI_API_TOKEN }}" ]; then
+            echo "token=${{ secrets.PYPI_API_TOKEN }}" >> $GITHUB_OUTPUT
+          elif [ -n "${{ secrets.TWINE_PASSWORD }}" ]; then
+            echo "token=${{ secrets.TWINE_PASSWORD }}" >> $GITHUB_OUTPUT
+          else
+            echo "token=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ steps.resolve-token.outputs.token }}
           skip-existing: true
 
 
