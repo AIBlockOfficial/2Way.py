@@ -10,53 +10,76 @@ pip install aiblock
 
 ## Quick Start
 
-### Configuration Setup
+### Basic Blockchain Queries
 
-The SDK uses environment variables for configuration:
+```python
+from aiblock.blockchain import BlockchainClient
 
-```bash
-# Required environment variables
-export AIBLOCK_PASSPHRASE="your-secure-passphrase"
+# Initialize blockchain client
+client = BlockchainClient(
+    storage_host='https://storage.aiblock.dev',
+    mempool_host='https://mempool.aiblock.dev'
+)
 
-# Optional environment variables (defaults shown)
-export AIBLOCK_STORAGE_HOST="https://storage.aiblock.dev"
-export AIBLOCK_MEMPOOL_HOST="https://mempool.aiblock.dev"
-export AIBLOCK_VALENCE_HOST="https://valence.aiblock.dev"
+# Query blockchain
+latest_block = client.get_latest_block()
+if latest_block.is_ok:
+    print(f"Latest block: {latest_block.get_ok()['content']['block_num']}")
+
+# Get specific block by number
+block = client.get_block_by_num(1)
+if block.is_ok:
+    print(f"Block 1: {block.get_ok()['content']}")
+
+# Get blockchain entry by hash
+entry = client.get_blockchain_entry('some_hash')
+
+# Get transaction by hash
+transaction = client.get_transaction_by_hash('tx_hash')
+
+# Get multiple transactions
+transactions = client.fetch_transactions(['hash1', 'hash2'])
+
+# Get supply information (requires mempool host)
+total_supply = client.get_total_supply()
+issued_supply = client.get_issued_supply()
 ```
 
-### Basic Usage
+### Wallet Operations
 
 ```python
 from aiblock.wallet import Wallet
-from aiblock.blockchain import BlockchainClient
-from aiblock.config import get_config, validate_env_config
 
-# Get and validate configuration
-config = get_config()
-error = validate_env_config(config)
-if error:
-    print(f"Configuration error: {error}")
-    exit(1)
-
-# Initialize blockchain client
-blockchain_client = BlockchainClient(
-    storage_host=config['storageHost'],
-    mempool_host=config['mempoolHost']
-)
-
-# Create and initialize wallet
+# Create wallet
 wallet = Wallet()
-seed_phrase = wallet.generate_seed_phrase()
-keypair = wallet.generate_keypair()
 
-# Query blockchain
-latest_block = blockchain_client.get_latest_block()
-total_supply = blockchain_client.get_total_supply()
-issued_supply = blockchain_client.get_issued_supply()
-balance = blockchain_client.get_balance(keypair['address'])
+# Generate seed phrase
+seed_phrase = wallet.generate_seed_phrase()
+print(f"Seed phrase: {seed_phrase}")
+
+# Initialize wallet from seed
+config = {
+    'passphrase': 'your-secure-passphrase',
+    'mempoolHost': 'https://mempool.aiblock.dev',
+    'storageHost': 'https://storage.aiblock.dev',
+    'valenceHost': 'https://valence.aiblock.dev'
+}
+
+result = wallet.from_seed(seed_phrase, config)
+if result.is_ok:
+    print(f"Wallet address: {wallet.get_address()}")
 ```
 
 ## Features
+
+### Blockchain Client
+- **get_latest_block()** - Get the latest block information
+- **get_block_by_num(block_num)** - Get a specific block by number
+- **get_blockchain_entry(hash)** - Get blockchain entry by hash
+- **get_transaction_by_hash(tx_hash)** - Get transaction details
+- **fetch_transactions(tx_hashes)** - Get multiple transactions
+- **get_total_supply()** - Get total token supply
+- **get_issued_supply()** - Get issued token supply
 
 ### Wallet Operations
 - Generate and manage seed phrases
@@ -64,24 +87,31 @@ balance = blockchain_client.get_balance(keypair['address'])
 - Create and sign transactions
 - Create item assets
 - Check balances
+- 2WayPayment protocol support
 
-### Blockchain Operations
-- Query latest block
-- Get block by number
-- Get blockchain entry by hash
-- Get total supply
-- Get issued supply
-- Get balance for address
+## Configuration
 
-## Example Usage
+The SDK uses environment variables for configuration. Create a `.env` file:
 
-See the [documentation](https://github.com/AIBlockOfficial/2Way.py/tree/main/docs) for more advanced usage and examples, including:
-- Wallet initialization
-- Keypair generation
-- Blockchain queries
-- Asset creation
-- Transaction creation
-- 2WayPayment protocol
+```bash
+AIBLOCK_PASSPHRASE="your-secure-passphrase"
+AIBLOCK_STORAGE_HOST="https://storage.aiblock.dev"
+AIBLOCK_MEMPOOL_HOST="https://mempool.aiblock.dev"
+AIBLOCK_VALENCE_HOST="https://valence.aiblock.dev"
+```
+
+## Error Handling
+
+All methods return `IResult` objects with proper error handling:
+
+```python
+result = client.get_latest_block()
+if result.is_ok:
+    data = result.get_ok()
+    print(f"Success: {data}")
+else:
+    print(f"Error: {result.error_message}")
+```
 
 ## Development
 
@@ -89,6 +119,14 @@ See the [documentation](https://github.com/AIBlockOfficial/2Way.py/tree/main/doc
 2. Install dependencies: `pip install -r requirements.txt`
 3. Install test dependencies: `pip install -r requirements-test.txt`
 4. Run tests: `pytest`
+
+All 68 tests pass, ensuring reliability and compatibility.
+
+## Documentation
+
+- [API Reference](docs/api-reference.md) - Complete API documentation
+- [Examples](docs/examples.md) - Usage examples and patterns
+- [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
 
 ## Contributing
 

@@ -599,35 +599,51 @@ class Wallet:
             'Nonce': get_random_string(32)
         }
 
-    def get_balance(self) -> Dict[str, Any]:
-        """Get balance for the current address.
-        
-        Returns:
-            Dict[str, Any]: Balance information
-            
-        Raises:
-            RuntimeError: If wallet is not initialized
-        """
+    def get_balance(self) -> IResult[Dict[str, Any]]:
+        """Get balance for the current address as an IResult for consistency."""
         try:
             if not self.current_keypair:
-                raise RuntimeError("Wallet not initialized")
+                return IResult.err(IErrorInternal.WalletNotInitialized, "Wallet not initialized")
 
             # Initialize network if needed
             if not self.routes_initialized:
                 init_result = self.init_network(self.config)
                 if init_result.is_err:
-                    raise RuntimeError("Failed to initialize network")
+                    return IResult.err(IErrorInternal.UnableToInitializeNetwork, init_result.error_message)
 
-            # Get balance
             balance_result = self.fetch_balance([self.current_keypair.address])
             if balance_result.is_err:
-                raise RuntimeError("Failed to fetch balance")
+                return IResult.err(IErrorInternal.UnableToFetchBalance, balance_result.error_message)
 
-            return balance_result.get_ok()
-
+            return IResult.ok(balance_result.get_ok())
         except Exception as e:
             logger.error(f"Error getting balance: {str(e)}")
-            raise
+            return IResult.err(IErrorInternal.InternalError, str(e))
+
+    def get_balance_result(self) -> IResult[Dict[str, Any]]:
+        """Get balance for the current address as an IResult for consistency.
+
+        Returns:
+            IResult[Dict[str, Any]]: Success with balance dict, or error with reason.
+        """
+        try:
+            if not self.current_keypair:
+                return IResult.err(IErrorInternal.WalletNotInitialized, "Wallet not initialized")
+
+            # Initialize network if needed
+            if not self.routes_initialized:
+                init_result = self.init_network(self.config)
+                if init_result.is_err:
+                    return IResult.err(IErrorInternal.UnableToInitializeNetwork, init_result.error_message)
+
+            balance_result = self.fetch_balance([self.current_keypair.address])
+            if balance_result.is_err:
+                return IResult.err(IErrorInternal.UnableToFetchBalance, balance_result.error_message)
+
+            return IResult.ok(balance_result.get_ok())
+        except Exception as e:
+            logger.error(f"Error getting balance: {str(e)}")
+            return IResult.err(IErrorInternal.InternalError, str(e))
 
     def create_item_asset(
         self,
