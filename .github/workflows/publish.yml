@@ -18,10 +18,18 @@ jobs:
           python-version: "3.11"
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Run tests
+      - name: Create virtual environment
+        run: ~/.local/bin/uv venv
+      - name: Install dependencies
         run: |
-          ~/.local/bin/uv pip install -q pytest requests-mock
-          ~/.local/bin/uv run pytest -q
+          ~/.local/bin/uv pip install -r requirements.txt -r requirements-test.txt
+      - name: Run tests
+        env:
+          AIBLOCK_PASSPHRASE: test
+          AIBLOCK_STORAGE_HOST: https://storage.aiblock.dev
+          AIBLOCK_MEMPOOL_HOST: https://mempool.aiblock.dev
+          AIBLOCK_VALENCE_HOST: https://valence.aiblock.dev
+        run: ~/.local/bin/uv run pytest -q
 
   build-and-publish:
     name: Build and publish
