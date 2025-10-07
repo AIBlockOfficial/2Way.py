@@ -10,6 +10,7 @@ import uuid
 import random
 from urllib.parse import urlparse
 from aiblock.interfaces import IResult, IErrorInternal
+from importlib import metadata as _importlib_metadata
 import json
 
 # Set up logging
@@ -91,7 +92,9 @@ def handle_response(response) -> IResult[APIResponse]:
     success_messages = {
         'latest_block': 'Latest block retrieved successfully',
         'block': 'Block retrieved successfully',
+        'block_by_num': 'Block retrieved successfully',
         'blockchain': 'Blockchain entry retrieved successfully',
+        'blockchain_entry': 'Blockchain entry retrieved successfully',
         'total_supply': 'Total supply retrieved successfully',
         'issued_supply': 'Issued supply retrieved successfully'
     }
@@ -174,48 +177,30 @@ class BlockchainClient:
             # Determine which host to use based on endpoint
             if endpoint.startswith(('total_supply', 'issued_supply', 'fetch_balance', 'create_item_asset', 'create_transactions')):
                 if not self.mempool_host:
-                    raise ValueError("Mempool host is required for this endpoint")
+                    return IResult.err(IErrorInternal.NetworkNotInitialized, "Mempool host is required for this endpoint")
                 url = f"{self.mempool_host}/{endpoint}"
             else:
                 if not self.storage_host:
-                    raise ValueError("Storage host is required for this endpoint")
+                    return IResult.err(IErrorInternal.NetworkNotInitialized, "Storage host is required for this endpoint")
                 url = f"{self.storage_host}/{endpoint}"
-            
-            # Prepare headers
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': f'AIBlock-Python-SDK/{self._get_version()}',
-                'Request-ID': str(uuid.uuid4()),
-                'Nonce': self._get_random_string(32)
-            }
-            
+
+            # Prepare headers using shared generator
+            headers = get_headers()
+            headers['User-Agent'] = f"AIBlock-Python-SDK/{self._get_version()}"
+
             # Make the request
             if method.upper() == 'POST':
                 if data is not None:
-                    # Use the same format as the working example: requests.request with data parameter
                     payload = json.dumps(data)
                     response = requests.request('POST', url, headers=headers, data=payload, timeout=30)
                 else:
                     response = requests.post(url, headers=headers, timeout=30)
             else:
                 response = requests.get(url, headers=headers, timeout=30)
-            
-            # Handle response
-            if response.status_code == 200:
-                try:
-                    json_response = response.json()
-                    return IResult.ok(APIResponse(**json_response))
-                except (ValueError, json.JSONDecodeError):
-                    return IResult.err(IErrorInternal.InvalidNetworkResponse, f"Invalid JSON response: {response.text}")
-            else:
-                try:
-                    error_response = response.json()
-                    reason = error_response.get('reason', f'HTTP {response.status_code}')
-                    return IResult.err(IErrorInternal.InvalidNetworkResponse, reason)
-                except (ValueError, json.JSONDecodeError):
-                    return IResult.err(IErrorInternal.InvalidNetworkResponse, f"HTTP {response.status_code}: {response.text}")
-                    
+
+            # Delegate response handling to shared handler
+            return handle_response(response)
+
         except requests.exceptions.Timeout:
             return IResult.err(IErrorInternal.NetworkError, "Request timeout")
         except requests.exceptions.ConnectionError:
@@ -327,8 +312,11 @@ class BlockchainClient:
         return self._make_request('blockchain_entry', method='POST', data=transaction_hashes)
 
     def _get_version(self) -> str:
-        """Get the SDK version."""
-        return "0.2.7"  # Current version from pyproject.toml
+        """Get the SDK version from installed metadata, fallback to project version."""
+        try:
+            return _importlib_metadata.version('aiblock')
+        except Exception:
+            return "0.2.8"
     
     def _get_random_string(self, length: int) -> str:
         """Generate a random string of specified length."""

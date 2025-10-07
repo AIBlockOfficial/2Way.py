@@ -33,9 +33,9 @@ def get_config() -> IResult[Dict[str, str]]:
     
     # Required environment variables
     required_vars = {
-        'MEMPOOL_HOST': 'mempoolHost',
-        'STORAGE_HOST': 'storageHost',
-        'PASSPHRASE': 'passphrase'
+        'AIBLOCK_MEMPOOL_HOST': 'mempoolHost',
+        'AIBLOCK_STORAGE_HOST': 'storageHost',
+        'AIBLOCK_PASSPHRASE': 'passphrase'
     }
     
     # Check for required environment variables

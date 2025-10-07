@@ -39,7 +39,7 @@ if result.is_ok:
     print(f"Block hash: {block_data['content']['block_hash']}")
     print(f"Timestamp: {block_data['content']['timestamp']}")
 else:
-    print(f"Error: {result.error_message}")
+    print(result.error, result.error_message)
 ```
 
 ### Querying Historical Blocks
@@ -79,7 +79,7 @@ def get_supply_info(client):
         total_data = total_result.get_ok()
         print(f"Total supply: {total_data['content']['total_supply']}")
     else:
-        print(f"Error getting total supply: {total_result.error_message}")
+        print(total_result.error, total_result.error_message)
     
     # Get issued supply
     issued_result = client.get_issued_supply()
@@ -87,7 +87,7 @@ def get_supply_info(client):
         issued_data = issued_result.get_ok()
         print(f"Issued supply: {issued_data['content']['issued_supply']}")
     else:
-        print(f"Error getting issued supply: {issued_result.error_message}")
+        print(issued_result.error, issued_result.error_message)
 
 # Example usage
 get_supply_info(client)
@@ -113,7 +113,7 @@ def get_transaction_details(client, tx_hash):
         print(f"  Content: {tx_data['content']}")
         return tx_data
     else:
-        print(f"Error getting transaction: {result.error_message}")
+        print(result.error, result.error_message)
         return None
 
 # Example usage
@@ -143,7 +143,7 @@ def fetch_multiple_transactions(client, tx_hashes):
         print(f"Retrieved {len(valid_hashes)} transactions")
         return transactions_data
     else:
-        print(f"Error fetching transactions: {result.error_message}")
+        print(result.error, result.error_message)
         return None
 
 # Example usage
@@ -183,7 +183,7 @@ def create_new_wallet():
         print(f"Address: {wallet.get_address()}")
         return wallet, seed_phrase
     else:
-        print(f"❌ Error initializing wallet: {result.error_message}")
+        print("❌", result.error, result.error_message)
         return None, None
 
 # Example usage
@@ -211,7 +211,7 @@ def restore_wallet_from_seed(seed_phrase):
         print(f"Address: {wallet.get_address()}")
         return wallet
     else:
-        print(f"❌ Error restoring wallet: {result.error_message}")
+        print("❌", result.error, result.error_message)
         return None
 
 # Example usage
@@ -242,7 +242,7 @@ def create_offline_wallet(seed_phrase):
         print(f"Address: {wallet.get_address()}")
         return wallet
     else:
-        print(f"❌ Error initializing offline wallet: {result.error_message}")
+        print("❌", result.error, result.error_message)
         return None
 
 # Example usage
@@ -266,12 +266,7 @@ def robust_blockchain_query(client):
             print(f"✅ Success: Got block {block_data['content']['block_num']}")
             return block_data
         else:
-            # Handle different types of errors
-            error_type = result.error
-            error_msg = result.error_message
-            
-            print(f"❌ Error Type: {error_type}")
-            print(f"❌ Error Message: {error_msg}")
+            print("❌", result.error, result.error_message)
             
             # Handle specific error types
             if "Connection" in error_msg:
@@ -311,7 +306,7 @@ def validate_and_query_block(client, block_num):
     if result.is_ok:
         return result.get_ok()
     else:
-        print(f"❌ Error: {result.error_message}")
+        print("❌", result.error, result.error_message)
         return None
 
 # Example usage

@@ -70,7 +70,7 @@ def test_get_latest_block_invalid_json(blockchain_client: BlockchainClient, mock
     )
     result = blockchain_client.get_latest_block()
     assert result.is_err
-    assert result.error == IErrorInternal.InvalidNetworkResponse
+    assert result.error == IErrorInternal.InvalidParametersProvided
     assert "Invalid JSON" in result.error_message
 
 def test_get_block_by_num(blockchain_client: BlockchainClient, mock_api):
@@ -114,7 +114,7 @@ def test_get_block_by_num_not_found(blockchain_client: BlockchainClient, mock_ap
     )
     result = blockchain_client.get_block_by_num(1000)
     assert result.is_err
-    assert result.error == IErrorInternal.InvalidNetworkResponse
+    assert result.error == IErrorInternal.NotFound
     assert "Block not found" in result.error_message
 
 def test_get_blockchain_entry(blockchain_client: BlockchainClient, mock_api):
@@ -144,7 +144,7 @@ def test_get_blockchain_entry_method_not_allowed(blockchain_client: BlockchainCl
     )
     result = blockchain_client.get_blockchain_entry('test_hash')
     assert result.is_err
-    assert result.error == IErrorInternal.InvalidNetworkResponse
+    assert result.error == IErrorInternal.BadRequest
     assert "Method not allowed" in result.error_message
 
 def test_get_transaction_by_hash(blockchain_client: BlockchainClient, mock_api):
@@ -219,7 +219,7 @@ def test_get_total_supply_no_mempool(storage_only_client: BlockchainClient, mock
     """Test handling when mempool URL is not set."""
     result = storage_only_client.get_total_supply()
     assert result.is_err
-    assert result.error == IErrorInternal.UnknownError
+    assert result.error == IErrorInternal.NetworkNotInitialized
     assert "Mempool host is required" in result.error_message
 
 def test_get_issued_supply(blockchain_client: BlockchainClient, mock_api):
@@ -249,14 +249,14 @@ def test_get_issued_supply_pending(blockchain_client: BlockchainClient, mock_api
     )
     result = blockchain_client.get_issued_supply()
     assert result.is_err
-    assert result.error == IErrorInternal.InvalidNetworkResponse
+    assert result.error == IErrorInternal.InvalidParametersProvided
     assert "Request is being processed" in result.error_message
 
 def test_get_issued_supply_no_mempool(storage_only_client: BlockchainClient, mock_api):
     """Test handling when mempool URL is not set."""
     result = storage_only_client.get_issued_supply()
     assert result.is_err
-    assert result.error == IErrorInternal.UnknownError
+    assert result.error == IErrorInternal.NetworkNotInitialized
     assert "Mempool host is required" in result.error_message
 
 def test_get_issued_supply_unknown_error(blockchain_client: BlockchainClient, mock_api):
@@ -268,5 +268,5 @@ def test_get_issued_supply_unknown_error(blockchain_client: BlockchainClient, mo
     )
     result = blockchain_client.get_issued_supply()
     assert result.is_err
-    assert result.error == IErrorInternal.InvalidNetworkResponse
+    assert result.error == IErrorInternal.UnknownError
     assert "I'm a teapot" in result.error_message 

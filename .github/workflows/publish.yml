@@ -9,6 +9,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Run tests
+        run: |
+          ~/.local/bin/uv pip install -q pytest requests-mock
+          ~/.local/bin/uv run pytest -q
+
   build-and-publish:
     name: Build and publish
     runs-on: ubuntu-latest
@@ -36,5 +50,6 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
+    needs: [test]
 
 

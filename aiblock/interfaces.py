@@ -64,6 +64,7 @@ class IErrorInternal(Enum):
     WalletNotInitialized = auto()
     UnableToFetchBalance = auto()
     UnableToInitializeNetwork = auto()
+    NetworkNotInitialized = auto()
     UnableToGenerateHeaders = auto()
     UnableToGetDebugData = auto()
     NoHostsProvided = auto()
