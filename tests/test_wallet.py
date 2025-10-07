@@ -287,7 +287,9 @@ def test_get_balance(wallet: Wallet, mock_api):
         }
     })
     
-    balance = wallet.get_balance()
+    balance_result = wallet.get_balance()
+    assert balance_result.is_ok
+    balance = balance_result.get_ok()
     assert isinstance(balance, dict)
     assert 'total' in balance
     assert 'tokens' in balance['total']

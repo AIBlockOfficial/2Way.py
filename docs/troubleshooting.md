@@ -19,9 +19,9 @@ This guide covers common issues you might encounter when using the AIBlock SDK a
 1. Check if your environment variables are set correctly:
    ```env
    # .env file in your project directory
-   STORAGE_HOST=https://storage.aiblock.dev
-   MEMPOOL_HOST=https://mempool.aiblock.dev
-   VALENCE_HOST=https://valence.aiblock.dev
+   AIBLOCK_STORAGE_HOST=https://storage.aiblock.dev
+   AIBLOCK_MEMPOOL_HOST=https://mempool.aiblock.dev
+   AIBLOCK_VALENCE_HOST=https://valence.aiblock.dev
    ```
 
 2. Verify network connectivity:
@@ -58,8 +58,11 @@ This guide covers common issues you might encounter when using the AIBlock SDK a
 **Solutions:**
 1. Check current balance:
    ```python
-   balance = client.get_balance(wallet.address)
-   print(f"Current balance: {balance['content']['total']['tokens']}")
+   result = wallet.get_balance()
+   if result.is_ok:
+       print(f"Current balance: {result.get_ok()['total']['tokens']}")
+   else:
+       print(result.error, result.error_message)
    ```
 
 2. Ensure you're using the correct wallet:

@@ -40,7 +40,7 @@ client = BlockchainClient(
 
 ### Methods
 
-All methods return `IResult` objects. Check success with `result.is_ok` and get data with `result.get_ok()` or error with `result.error_message`.
+All methods return `IResult` objects. Check success with `result.is_ok` and get data with `result.get_ok()` or error with `result.error` and `result.error_message`.
 
 #### get_latest_block()
 
@@ -223,6 +223,15 @@ else:
     print(f"Error message: {result.error_message}")
 ```
 
+### Common error mappings
+
+- NotFound: 404 responses from nodes
+- BadRequest: 400/405 invalid requests
+- InvalidParametersProvided: invalid inputs or 202 pending
+- NetworkError: connection/timeouts
+- InternalServerError/ServiceUnavailable/GatewayTimeout: 5xx errors
+- NetworkNotInitialized: required host missing for endpoint
+
 ## Environment Variables
 
 You can use environment variables for configuration:
@@ -262,39 +271,20 @@ All successful API responses follow this format:
 - **Mempool Host**: Required only for `get_total_supply()` and `get_issued_supply()`
 - **Valence Host**: Required for wallet operations involving the network
 
-## Type Hints
-
-The SDK provides comprehensive type hints for better IDE integration:
-
-```python
-from aiblock.interfaces import (
-    BlockResponse,
-    SupplyResponse,
-    AssetResponse,
-    TransactionResponse
-)
-```
+<!-- Type-specific response classes are not exposed; use dicts returned in IResult content -->
 
 ## Best Practices
 
-1. Always check response status:
+1. Always check IResult:
 ```python
-response = client.create_item_asset(...)
-if response['status'] == 'success':
-    # Handle success
+result = client.get_latest_block()
+if result.is_ok:
+    data = result.get_ok()
 else:
-    # Handle error
+    print(result.error, result.error_message)
 ```
 
-2. Use try-catch for error handling:
-```python
-try:
-    response = client.create_item_asset(...)
-except Exception as e:
-    # Handle network or other errors
-```
-
-3. Validate inputs before sending:
+2. Validate inputs before sending:
 ```python
 def validate_metadata(metadata: dict) -> bool:
     try:
@@ -303,4 +293,4 @@ def validate_metadata(metadata: dict) -> bool:
         return True
     except Exception:
         return False
-``` 
+```

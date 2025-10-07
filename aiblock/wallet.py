@@ -33,9 +33,6 @@ from aiblock.key_handler import (
 from aiblock.validators import validate_metadata
 from aiblock.utils import (
     cast_api_status,
-    create_id_and_nonce_headers,
-    throw_if_err,
-    transform_create_tx_response_from_network,
 )
 from aiblock.utils.general_utils import (
     get_random_bytes,
@@ -43,7 +40,7 @@ from aiblock.utils.general_utils import (
 )
 from aiblock.constants import ADDRESS_VERSION, ITEM_DEFAULT, SEED_REGEN_THRES, TEMP_ADDRESS_VERSION
 from aiblock.config import get_config, validate_env_config, validate_config
-from aiblock.blockchain import BlockchainClient
+from aiblock.blockchain import BlockchainClient, get_headers as client_get_headers, handle_response as client_handle_response
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -108,10 +105,10 @@ class Wallet:
                 return IResult.err(IErrorInternal.InvalidParametersProvided, "No configuration provided")
 
             # Validate config
-            config_result = validate_config(config)
+            config_result = validate_wallet_config(config)
             if config_result.is_err:
                 return config_result
-                
+        
             validated_config = config_result.get_ok()
             
             # Initialize network routes
@@ -174,7 +171,7 @@ class Wallet:
         try:
             # Validate config first
             print(f"Validating config in from_seed: {config}, init_offline: {init_offline}")  # Debug log
-            config_result = validate_config(config, init_offline)
+            config_result = validate_wallet_config(config, init_offline)
             if config_result.is_err:
                 print(f"Config validation failed: {config_result.error}, {config_result.error_message}")  # Debug log
                 return config_result
@@ -260,14 +257,14 @@ class Wallet:
             RouteConfig: Default route configuration
         """
         return {
-            'fetch_balance': 0,
-            'create_item_asset': 0,
-            'create_transactions': 0,
-            'total_supply': 0,
-            'issued_supply': 0,
-            'transaction_status': 0,
-            'debug_data': 0
-        }
+                        'fetch_balance': 0,
+                        'create_item_asset': 0,
+                        'create_transactions': 0,
+                        'total_supply': 0,
+                        'issued_supply': 0,
+                        'transaction_status': 0,
+                        'debug_data': 0
+                    }
 
     def fetch_balance(self, address_list: List[str]) -> IResult[Dict[str, Any]]:
         """Fetch balance for a list of addresses.
@@ -289,32 +286,21 @@ class Wallet:
                     return init_result
             
             if not address_list:
-                return IResult.err("No addresses provided")
+                return IResult.err(IErrorInternal.InvalidParametersProvided, "No addresses provided")
 
-            # Get default routes configuration
-            routes = self._get_default_routes()
-            headers = self.get_request_id_and_nonce_headers_for_route(routes, '/fetch_balance')
-            if headers.is_err:
-                return IResult.err("Failed to generate request headers")
+            # Build headers using shared helper
+            headers = client_get_headers()
 
-            response = requests.post(
-                f"{self.network_config.get('mempoolHost')}/fetch_balance",
-                json=address_list,
-                headers=headers.get_ok()
-            )
-            
-            if response.status_code != 200:
-                return IResult.err(f"Request failed with status {response.status_code}")
+            # Make request
+            url = f"{self.network_config.get('mempoolHost')}/fetch_balance"
+            response = requests.post(url, json=address_list, headers=headers, timeout=30)
 
-            try:
-                response_json = response.json()
-            except ValueError:
-                return IResult.err("Invalid JSON response from server")
-
-            if response_json.get('status') == 'error':
-                return IResult.err(response_json.get('reason', 'Unknown error'))
-
-            return IResult.ok(response_json.get('content'))
+            # Unified response handling
+            result = client_handle_response(response)
+            if result.is_err:
+                return IResult.err(result.error, result.error_message)
+            api_response = result.get_ok()
+            return IResult.ok(api_response.get('content'))
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error fetching balance: {str(e)}")
@@ -322,53 +308,6 @@ class Wallet:
         except Exception as e:
             logger.error(f"Error fetching balance: {str(e)}")
             return IResult.err("Failed to fetch balance")
-
-    def get_request_id_and_nonce_headers_for_route(
-        self, routes_pow: Dict[str, int], route: str
-    ) -> IResult[Dict[str, str]]:
-        """Generate headers for a route.
-        
-        Args:
-            routes_pow: Route difficulty configuration
-            route: Route to generate headers for
-            
-        Returns:
-            IResult[Dict[str, str]]: Headers or error
-        """
-        try:
-            if not routes_pow:
-                return IResult.err(IErrorInternal.ClientNotInitialized)
-                
-            route_difficulty = routes_pow.get(route.lstrip('/'), 0)
-            return IResult.ok({
-                'x-cache-id': self._generate_cache_id(),
-                'x-nonce': self._generate_nonce(route_difficulty),
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            })
-        except Exception as e:
-            logger.error(f"Error generating headers: {str(e)}")
-            return IResult.err(IErrorInternal.UnableToGenerateHeaders)
-
-    def _generate_cache_id(self) -> str:
-        """Generate a cache ID for requests.
-        
-        Returns:
-            str: A 32-character lowercase hexadecimal string
-        """
-        random_bytes = nacl.utils.random(16)
-        return random_bytes.hex()
-
-    def _generate_nonce(self, difficulty: int = 0) -> str:
-        """Generate a nonce with the specified difficulty.
-        
-        Args:
-            difficulty: Required number of leading zeros
-            
-        Returns:
-            str: Generated nonce
-        """
-        return create_id_and_nonce_headers()['nonce']
 
     def get_debug_data(self, host: str) -> IResult[Dict[str, Any]]:
         """Get debug data from a host.
@@ -385,15 +324,16 @@ class Wallet:
             if not all([parsed.scheme, parsed.netloc]):
                 return IResult.err(IErrorInternal.InvalidParametersProvided)
 
-            response = requests.get(f"{host}/debug_data")
-            response_json = response.json()
-            
+            headers = client_get_headers()
+            response = requests.get(f"{host}/debug_data", headers=headers, timeout=30)
+            handled = client_handle_response(response)
+            if handled.is_err:
+                return IResult.err(handled.error, handled.error_message)
+            content = handled.get_ok().get('content')
             return IResult.ok({
-                'status': cast_api_status(response_json['status']),
-                'reason': response_json.get('reason'),
-                'content': {
-                    'debugDataResponse': response_json.get('content')
-                }
+                'status': 'success',
+                'reason': 'Debug data retrieved successfully',
+                'content': {'debugDataResponse': content}
             })
         except Exception as e:
             logger.error(f"Error getting debug data: {str(e)}")
@@ -711,7 +651,7 @@ class Wallet:
 
             # 4. Prepare Data for Hashing (Match JS SDK 'asset' structure for hash)
             asset_data_for_hash = {
-                "item_amount": amount,
+            "item_amount": amount,
                 "metadata": metadata # Use the validated or default metadata dict
             }
 
@@ -749,54 +689,25 @@ class Wallet:
             logger.debug("Constructed API request payload: %s", json.dumps(request_data, indent=2))
 
             # 8. Get Headers & Make Request
-            headers = self.get_headers()
+            headers = client_get_headers()
             logger.debug("Request Headers: %s", headers)
             api_endpoint = f"{self.network_config.get('mempoolHost')}/create_item_asset"
             logger.info("Sending POST request to %s", api_endpoint)
 
             try:
-                response = requests.post(
-                    api_endpoint,
-                    json=request_data,
-                    headers=headers,
-                    timeout=10
-                )
+                response = requests.post(api_endpoint, json=request_data, headers=headers, timeout=10)
                 logger.debug("Received response status code: %s", response.status_code)
                 logger.debug("Received response body: %s", response.text)
             except requests.exceptions.RequestException as e:
                 logger.error("Network request failed: %s", str(e))
                 return IResult.err(IErrorInternal.NetworkError, str(e))
 
-            # 9. Handle Response
-            if response.status_code == 400:
-                 logger.error("Server returned 400 Bad Request. Payload: %s", json.dumps(request_data))
-                 try:
-                      error_json = response.json()
-                      reason = error_json.get('reason', response.text)
-                 except ValueError:
-                      reason = response.text
-                 return IResult.err(IErrorInternal.BadRequest, f"Server returned 400: {reason}")
-            elif response.status_code != 200:
-                logger.error("Request failed with status %s: %s", response.status_code, response.text)
-                error_type = IErrorInternal.NetworkError # Default
-                if response.status_code == 401: error_type = IErrorInternal.Unauthorized
-                if response.status_code == 403: error_type = IErrorInternal.Forbidden
-                if response.status_code == 404: error_type = IErrorInternal.NotFound
-                if response.status_code >= 500: error_type = IErrorInternal.InternalServerError
-                return IResult.err(error_type, f"Request failed with status {response.status_code}: {response.text}")
-
-            try:
-                response_json = response.json()
-            except ValueError:
-                logger.error("Invalid JSON response received from server")
-                return IResult.err(IErrorInternal.InvalidNetworkResponse, "Invalid JSON response from server")
-
-            if response_json.get('status') == 'error':
-                logger.error("API returned error status: %s", response_json.get('reason', 'Unknown error'))
-                return IResult.err(IErrorInternal.NetworkError, response_json.get('reason', 'Unknown error'))
-
+            # 9. Handle response using shared handler
+            handled = client_handle_response(response)
+            if handled.is_err:
+                return IResult.err(handled.error, handled.error_message)
             logger.info("create_item_asset successful.")
-            return IResult.ok(response_json.get('content'))
+            return IResult.ok(handled.get_ok().get('content'))
 
         except Exception as e:
             logger.error(f"Unexpected error in create_item_asset: {str(e)}")
@@ -1091,9 +1002,10 @@ class Wallet:
 
             # 9. POST to valence node
             valence_host = self.network_config.get("valenceHost")
-            response = requests.post(f"{valence_host}/valence_set", json=send_body, headers=send_headers)
-            if response.status_code != 200:
-                return IResult.err(IErrorInternal.NetworkError, f"Valence set failed: {response.text}")
+            response = requests.post(f"{valence_host}/valence_set", json=send_body, headers=send_headers, timeout=30)
+            handled = client_handle_response(response)
+            if handled.is_err:
+                return IResult.err(handled.error, handled.error_message)
 
             # 10. Return DRUID and encrypted transaction
             return IResult.ok({"druid": druid, "encryptedTx": encrypted_tx})
@@ -1301,10 +1213,12 @@ class Wallet:
         import json
 
         valence_host = self.network_config.get("valenceHost")
-        response = requests.post(f"{valence_host}/fetch_pending_2way_payments", json={"encryptedTxList": encrypted_tx_list})
-        if response.status_code != 200:
-            return IResult.err(IErrorInternal.NetworkError, f"Fetch failed: {response.text}")
-        result = response.json()
+        headers = client_get_headers()
+        response = requests.post(f"{valence_host}/fetch_pending_2way_payments", json={"encryptedTxList": encrypted_tx_list}, headers=headers, timeout=30)
+        handled = client_handle_response(response)
+        if handled.is_err:
+            return IResult.err(handled.error, handled.error_message)
+        result = handled.get_ok()
         pending = result.get("content", {}).get("pending", {})
         # Decrypt each pending tx
         decrypted = {}
@@ -1364,11 +1278,12 @@ class Wallet:
         merged_tx["signatures"] = self.sign_transaction(merged_tx, my_keypair)
         # 6. Submit to valence node
         valence_host = self.network_config.get("valenceHost")
-        headers = self.get_headers()
-        response = requests.post(f"{valence_host}/accept_2way_payment", json={"druid": druid, "mergedTx": merged_tx}, headers=headers)
-        if response.status_code != 200:
-            return IResult.err(IErrorInternal.NetworkError, f"Accept failed: {response.text}")
-        return IResult.ok(response.json().get("content"))
+        headers = client_get_headers()
+        response = requests.post(f"{valence_host}/accept_2way_payment", json={"druid": druid, "mergedTx": merged_tx}, headers=headers, timeout=30)
+        handled = client_handle_response(response)
+        if handled.is_err:
+            return IResult.err(handled.error, handled.error_message)
+        return IResult.ok(handled.get_ok().get("content"))
 
     def reject_2way_payment(self, druid, pending_dict, all_keypairs):
         """
@@ -1377,13 +1292,14 @@ class Wallet:
         """
         import requests
         valence_host = self.network_config.get("valenceHost")
-        headers = self.get_headers()
-        response = requests.post(f"{valence_host}/reject_2way_payment", json={"druid": druid}, headers=headers)
-        if response.status_code != 200:
-            return IResult.err(IErrorInternal.NetworkError, f"Reject failed: {response.text}")
-        return IResult.ok(response.json().get("content"))
+        headers = client_get_headers()
+        response = requests.post(f"{valence_host}/reject_2way_payment", json={"druid": druid}, headers=headers, timeout=30)
+        handled = client_handle_response(response)
+        if handled.is_err:
+            return IResult.err(handled.error, handled.error_message)
+        return IResult.ok(handled.get_ok().get("content"))
 
-def validate_config(config: Dict[str, Any], init_offline: bool = False) -> IResult[WalletConfig]:
+def validate_wallet_config(config: Dict[str, Any], init_offline: bool = False) -> IResult[WalletConfig]:
     """Validate wallet configuration.
     
     Args:
@@ -1428,9 +1344,7 @@ def validate_config(config: Dict[str, Any], init_offline: bool = False) -> IResu
             wallet_config['valenceHost'] = valence_host
             
         return IResult.ok(wallet_config)
-            
     except Exception as e:
-        logger.error(f"Error validating config: {str(e)}")
         return IResult.err(IErrorInternal.InvalidParametersProvided, str(e))
 
 # You can add additional methods following the same pattern, adjusting them according to your needs

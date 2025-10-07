@@ -68,6 +68,8 @@ config = {
 result = wallet.from_seed(seed_phrase, config)
 if result.is_ok:
     print(f"Wallet address: {wallet.get_address()}")
+else:
+    print(result.error, result.error_message)
 ```
 
 ## Features
@@ -110,15 +112,14 @@ if result.is_ok:
     data = result.get_ok()
     print(f"Success: {data}")
 else:
-    print(f"Error: {result.error_message}")
+    print(result.error, result.error_message)
 ```
 
 ## Development
 
 1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Install test dependencies: `pip install -r requirements-test.txt`
-4. Run tests: `pytest`
+2. Install uv (https://docs.astral.sh/uv/)
+3. Run tests: `uv pip install -q pytest requests-mock && uv run pytest -q`
 
 All 68 tests pass, ensuring reliability and compatibility.
 
